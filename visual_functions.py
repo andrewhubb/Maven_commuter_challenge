@@ -9,15 +9,23 @@ import dash_dangerously_set_inner_html
 import plotly.express as px
 from plotly.subplots import make_subplots  # Add this line
 import plotly.graph_objects as go
+from scipy.stats import linregress
 
 from config import (
     services,
     full_colours,
+    full_colours_tinted,
     colours,
     colours_pct,
     dark_blue,
     dark_orange
 )
+
+from support_functions import(
+    calculate_baseline_ridership,
+    calculate_current_ridership
+)
+
 from typing import Tuple
 
 def create_title():
@@ -97,13 +105,13 @@ def create_sparkline(granular_data: pd.DataFrame, service: list, granularity: st
     Creates a sparkline visual for display in ridership cards
 
     Args:
-        granular_data : The resampled dataframe.
-        service       : The current service for the card
-        granularity   : The selected granularity level
-        metrics       : The metrics to be used from the metrics_store
+        granular_data: The resampled dataframe.
+        service      : The current service for the card
+        granularity  : The selected granularity level
+        metrics      : The metrics to be used from the metrics_store
 
     Returns:
-        sparkline_figure : A Plotly Go Objects line chart
+        sparkline_figure: A Plotly Go Objects line chart
     """
     if granularity == 'Year':
         max_date = granular_data['Year'].max()
@@ -146,7 +154,7 @@ def create_kpi_cards(kpis):
     Create a Row of cards to show KPI values.
 
     Args:        
-        kpis : The KPI values from the kpi_store
+        kpis: The KPI values from the kpi_store
 
     Returns:
         cards: A list containing the cards to display on the row
@@ -284,8 +292,8 @@ def create_kpi_cards(kpis):
     return cards
 
 
-                             
-def create_ridership_cards(granular_data, selected_services, granularity, metrics) -> list:
+
+def create_ridership_cards(granular_data: pd.DataFrame, selected_services: list, granularity: str, metrics: dict) -> go.Figure:
     """
     Create a Row of cards to show ridership values and sparkline visuals.
 
@@ -370,7 +378,7 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
 
     Args:
         granular_data: The resampled dataframe.
-        granularity: The selected granularity level.
+        granularity  : The selected granularity level.
 
     Returns:
         fig: A Plotly Graph Objects figure.
@@ -417,7 +425,18 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
     return fig
 
 
+
 def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Figure:
+    """
+    Creates a correlation matrix with a heatmap colouring.
+    
+    Args: 
+        granular_data: Aggregated DataFrame with recovery percentage columns and a time column.
+        granularity  : The granularity level ('Month', 'Quarter', 'Year').        
+    
+    Returns: 
+        fig:  Plotly Figure object with the heatmap.
+    """
     # Resample data based on granularity    
     filtered_cols = [col for col in granular_data.columns if not any(p in col.lower() for p in ["% of pre-pandemic", "% pre-pandemic"])]
     #filtered_cols = [col for col in granular_data.columns if not any(p in col.lower() for p in ["% of Pre-Pandemic", "% Pre-Pandemic"])]
@@ -455,8 +474,19 @@ def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Fi
     return fig
 
 
-def create_dual_axis_chart(granular_data: pd.DataFrame,granularity: str, service: str) -> go.Figure:    
-
+def create_dual_axis_chart(granular_data: pd.DataFrame,granularity: str, selected_services: list) -> go.Figure:    
+    """
+    Creates a dual axis chart showing the average recovery percentage by service accross all time periods.
+    
+    Args: 
+        granular_data    : Aggregated DataFrame with recovery percentage columns and a time column.
+        granularity      : The granularity level ('Month', 'Quarter', 'Year').
+        selected_services: The list of services selected from the services dropdown.
+    
+    Returns: 
+        fig: Plotly Figure object with the dual axis chart.
+    """
+    
     if granularity == 'Year':
         granular_data['Year'] = granular_data['Year'].astype(str)
         x_axis_values = granular_data['Year']  # Use the 'Year' column directly
@@ -464,39 +494,49 @@ def create_dual_axis_chart(granular_data: pd.DataFrame,granularity: str, service
         x_axis_values = granular_data['Date']  # Use the 'Date' column directly
     # Create the dual-axis chart
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    
-    
-    # Add ridership data to the primary y-axis
-    fig.add_trace(
-        go.Scatter(
-            x=x_axis_values,
-            y=granular_data[service],
-            mode='lines',
-            name=f'{service} Ridership',
-            line=dict(color='blue')
-        ),
-        secondary_y=False
-    )
-    
+
+
+    for service in selected_services:
+            fig.add_trace(
+                go.Scatter(                                            
+                    x=x_axis_values,
+                    y=granular_data[service],
+                    mode='lines',                        
+                    name=f'{service} Ridership',
+                    line=dict(color=full_colours[services.index(service)]),
+                ),
+                secondary_y=False
+            )    
+            
     # Add recovery percentage data to the secondary y-axis
-    fig.add_trace(
-        go.Scatter(
-            x=x_axis_values,
-            y=granular_data[f'{service}: % of Pre-Pandemic'],
-            mode='lines',
-            name=f'{service} Recovery %',
-            line=dict(color='green', dash='dot')
-        ),
-        secondary_y=True
-    )
+            fig.add_trace(
+                go.Scatter(
+                    x=x_axis_values,
+                    y=granular_data[f'{service}: % of Pre-Pandemic'],
+                    mode='lines',
+                    name=f'{service} Recovery %',
+                    line=dict(color=full_colours_tinted[services.index(service)], dash='dot')
+                ),
+                secondary_y=True
+            )
     
     # Update axes titles
     fig.update_layout(
-        title=f'{service} Ridership and Recovery Percentage',
+        title='Ridership and Recovery Percentage by Service',
         xaxis_title=None,
         yaxis_title='Ridership',
+        xaxis=dict(automargin=True),
         yaxis2_title='% of Pre-Pandemic',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+        margin=dict(l=50, r=50, b=50, t=50),
+        template='plotly_white',
+        legend=dict(
+            orientation="v",  # Vertical orientation
+            xanchor="right",  # Align right
+            yanchor="top",   # Align top
+            x=1.3,          # Adjust x-position to place it outside the chart
+            y=1,           # Adjust y-position to align with the top of the chart
+        )
+        #legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
     )
     
     # Update axis ranges and layout
@@ -506,7 +546,16 @@ def create_dual_axis_chart(granular_data: pd.DataFrame,granularity: str, service
     return fig
 
 
-def create_recovery_bar_chart(granular_data: pd.DataFrame) -> go.Figure:
+def create_recovery_bar_chart(granular_data: pd.DataFrame) -> go.Figure:        
+    """
+    Create a bar chart showing the average recovery percentage by service accross all time periods.
+    
+    Args: 
+        granular_data: Aggregated DataFrame with recovery percentage columns and a time column.    
+    
+    Returns: 
+        fig: Plotly Figure object with the bar chart.
+    """
     # Extract recovery columns
     recovery_cols = [col for col in granular_data.columns if ': % of Pre-Pandemic' in col]
     
@@ -560,9 +609,11 @@ def create_recovery_heatmap(granular_data: pd.DataFrame, granularity: str) -> go
     """
     Create a heatmap of recovery percentages by service and time period.
     
-    :param granular_data: Aggregated DataFrame with recovery percentage columns and a time column.
-    :param granularity: The granularity level ('Month', 'Quarter', 'Year').
-    :return: Plotly Figure object with the heatmap.
+    Args:
+        granular_data: Aggregated DataFrame with recovery percentage columns and a time column.
+        granularity  : The granularity level ('Month', 'Quarter', 'Year').
+    Returns:
+        fig: Plotly Figure object with the heatmap.
     """
     # Determine the time column based on granularity
     time_column = 'Year' if granularity == 'Year' else 'Date'
@@ -616,13 +667,339 @@ def create_recovery_heatmap(granular_data: pd.DataFrame, granularity: str) -> go
             tickmode='array',
             tickvals=x_axis_tickvals,
             ticktext=x_axis_ticktext,
-            tickangle=-45 if granularity in ['Month', 'Quarter'] else 0,  # Rotate for readability
+            tickangle=45 if granularity in ['Month', 'Quarter'] else 0,  # Rotate for readability
             tickfont=dict(size=10 if granularity == 'Month' else 12)  # Adjust font size
         ),
         yaxis=dict(
             title=None,
         ),
         template="plotly_white"
+    )
+
+    return fig
+
+
+def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
+    """
+    Create a ridership composition pie chart comparing pre- and post-pandemic periods.
+    
+    Args:
+        mta_data: DataFrame with ridership values by service and time.
+    
+    Returns:
+        fig: Plotly Figure object with the pie charts.
+    """
+
+    mta_data['Date'] = pd.to_datetime(mta_data['Date'], format='%m/%d/%Y')
+    
+    # Identify ridership columns
+    ridership_cols = [col for col in mta_data.columns if ': % of Pre-Pandemic' not in col and col != 'Date']
+
+    # Filter the dataset to the pre- and post-pandemic date ranges
+    pre_pandemic_data = mta_data[mta_data['Date'] < '2020-03-11']
+    post_pandemic_data = mta_data[
+        (mta_data['Date'].dt.year == 2024) & 
+        (mta_data['Date'].dt.month == 3) & 
+        (mta_data['Date'].dt.day < 11)
+    ]   
+    
+    # Sum ridership values for pre- and post-pandemic periods
+    pre_pandemic_totals = pre_pandemic_data[ridership_cols].sum()
+    post_pandemic_totals = post_pandemic_data[ridership_cols].sum()
+
+    # Compute the total ridership for both periods
+    total_pre_pandemic = pre_pandemic_totals.sum()
+    total_post_pandemic = post_pandemic_totals.sum()
+
+    # Create a figure
+    fig = go.Figure()
+    
+    # Add pre-pandemic pie chart
+    fig.add_trace(
+        go.Pie(
+            labels=pre_pandemic_totals.index,
+            values=pre_pandemic_totals.values,
+            name="Pre-Pandemic",
+            hole=0.58,
+            sort=True,
+            direction="clockwise",
+            texttemplate="%{percent:.1%}",
+        )
+    )
+    
+    # Add post-pandemic pie chart
+    fig.add_trace(
+        go.Pie(
+            labels=post_pandemic_totals.index,
+            values=post_pandemic_totals.values,
+            name="Post-Pandemic",
+            hole=0.58,
+            sort=True,
+            direction="clockwise",
+            texttemplate="%{percent:.1%}",
+        )
+    )
+    
+    # Initially show only pre-pandemic chart
+    fig.data[1].visible = False
+
+    # Define annotations for the total ridership values
+    pre_pandemic_annotation = dict(
+        text=f'<b>{total_pre_pandemic:,.0f}</b>',
+        x=0.5,
+        y=0.5,
+        font=dict(size=22, color="black"),
+        showarrow=False
+    )
+    post_pandemic_annotation = dict(
+        text=f'<b>{total_post_pandemic:,.0f}</b>',
+        x=0.5,
+        y=0.5,
+        font=dict(size=22, color="black"),
+        showarrow=False
+    )
+
+    # Add toggle buttons for annotations and pie chart visibility
+    fig.update_layout(
+        updatemenus=[
+            dict(
+                type="buttons",
+                direction="left",
+                buttons=[
+                    dict(
+                        label="Pre-Pandemic",
+                        method="update",
+                        args=[
+                            {"visible": [True, False]},  # Pie visibility
+                            {"annotations": [pre_pandemic_annotation]}  # Annotation for pre-pandemic
+                        ]
+                    ),
+                    dict(
+                        label="Post-Pandemic",
+                        method="update",
+                        args=[
+                            {"visible": [False, True]},  # Pie visibility
+                            {"annotations": [post_pandemic_annotation]}  # Annotation for post-pandemic
+                        ]
+                    )
+                ],
+                showactive=True,
+                x=0.1,
+                y=1.1
+            )
+        ],
+        annotations=[pre_pandemic_annotation],  # Start with pre-pandemic annotation
+        title="Ridership Composition",
+        template="plotly_white",        
+    )
+
+    return fig
+
+
+def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list) -> go.Figure:
+    """
+    Create a scatter plot with trendlines for selected services to visualise their recovery trajectories.
+    
+    Args:
+        mta_data: DataFrame with ridership values by service and time.
+        selected_services: List of service names to plot (e.g., ['Subways', 'Buses', 'LIRR']).
+    
+    Returns:
+        fig: Plotly Figure object with scatter plots and trendlines for the selected services.
+    """
+    
+    # Ensure 'Date' is in datetime format
+    #mta_data['Date'] = pd.to_datetime(mta_data['Date'], format='%m/%d/%Y')
+    
+    # Create a figure
+    fig = go.Figure()
+
+    # Loop through the selected services
+    for service_name in selected_services:
+        # Filter the data for the selected service
+        service_data = mta_data[['Date', service_name]].dropna()
+
+        # Perform linear regression for the trendline
+        x = service_data['Date'].map(pd.Timestamp.toordinal)  # Convert dates to ordinal numbers for regression
+        y = service_data[service_name]
+        slope, intercept, r_value, p_value, std_err = linregress(x, y)
+
+        # Calculate the trendline
+        trendline_y = slope * x + intercept
+
+        # Scatter plot for the selected service's ridership
+        fig.add_trace(go.Scatter(
+            x=service_data['Date'],
+            y=service_data[service_name],
+            mode='markers',
+            name=f'{service_name} Ridership',
+            marker=dict(size=8),
+            showlegend=True
+        ))
+
+        # Add the trendline for the selected service
+        fig.add_trace(go.Scatter(
+            x=service_data['Date'],
+            y=trendline_y,
+            mode='lines',
+            name=f'{service_name} Trendline',
+            line=dict(dash='dash'),
+            showlegend=True
+        ))
+
+    # Customize the layout
+    fig.update_layout(
+        title='Recovery Trajectories for Selected Services',
+        xaxis_title=None,
+        yaxis_title='Ridership',
+        template='plotly_white',
+        margin=dict(
+            r=150,  # Increase the right margin to accommodate the legend
+            l=50,   # Left margin (if necessary)
+            t=50,   # Top margin (if necessary)
+            b=50    # Bottom margin (if necessary)
+        ),
+        legend=dict(
+            orientation="v",   # Vertical legend to save space
+            yanchor="top",     # Position legend at the top of the plot
+            y=0.9,               # Place the legend slightly outside the plot (adjustable)
+            xanchor="right",   # Align legend to the right of the plot
+            x=1.25              # Position the legend outside the plot area
+    )
+)
+
+    return fig
+
+def create_before_after_chart(mta_data: pd.DataFrame, services: list) -> go.Figure:
+    """
+    Create a side-by-side bar chart comparing ridership pre-pandemic vs. post-pandemic,
+    sorted by descending pre-pandemic ridership.
+
+    Args:
+        mta_data: DataFrame containing ridership data.
+        services: List of selected services to include in the comparison.
+
+    Returns:
+        fig: Plotly Figure object.
+    """
+    # Convert dates to datetime for filtering
+    mta_data['Date'] = pd.to_datetime(mta_data['Date'], format='%m/%d/%Y')
+
+    # Filter for pre-pandemic and post-pandemic date ranges
+    pre_pandemic_data = mta_data[
+        (mta_data['Date'] >= '2020-03-01') & (mta_data['Date'] < '2020-03-11')
+    ]
+    post_pandemic_data = mta_data[
+        (mta_data['Date'] >= '2024-03-01') & (mta_data['Date'] < '2024-03-11')
+    ]
+
+    # Aggregate data by service
+    pre_pandemic_totals = pre_pandemic_data[services].sum()
+    post_pandemic_totals = post_pandemic_data[services].sum()
+
+    # Combine totals into a DataFrame for sorting
+    totals_df = pd.DataFrame({
+        "Service": services,
+        "Pre-Pandemic": pre_pandemic_totals,
+        "Post-Pandemic": post_pandemic_totals
+    })
+
+    # Sort by descending pre-pandemic ridership
+    totals_df = totals_df.sort_values(by="Pre-Pandemic", ascending=False)
+
+    # Extract sorted values
+    sorted_services = totals_df["Service"]
+    sorted_pre_pandemic = totals_df["Pre-Pandemic"]
+    sorted_post_pandemic = totals_df["Post-Pandemic"]
+
+    # Create figure
+    fig = go.Figure()
+
+    # Add pre-pandemic bars
+    fig.add_trace(
+        go.Bar(
+            x=sorted_services,
+            y=sorted_pre_pandemic,
+            name="Pre-Pandemic",
+            marker_color="blue",
+        )
+    )
+
+    # Add post-pandemic bars
+    fig.add_trace(
+        go.Bar(
+            x=sorted_services,
+            y=sorted_post_pandemic,
+            name="Post-Pandemic",
+            marker_color="red",
+        )
+    )
+
+    # Update layout
+    fig.update_layout(
+        title="Service Ridership Comparison: Pre-Pandemic vs. Post-Pandemic",
+        xaxis_title=None,
+        yaxis_title="Total Ridership",
+        barmode="group",  # Group bars side-by-side
+        template="plotly_white",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+
+    return fig
+
+
+def create_daily_variability_boxplot(mta_data: pd.DataFrame, services: list, start_date: str, end_date: str) -> go.Figure:
+    """
+    Create a box plot to visualise daily ridership variability for selected services
+    over a specified time range.
+
+    Args:
+        mta_data: DataFrame containing ridership data.
+        services: List of selected services to include in the box plot.
+        start_date: Start of the user-selected time range (inclusive).
+        end_date: End of the user-selected time range (inclusive).
+
+    Returns:
+        fig: Plotly Figure object with the box plot.
+    """
+    # Convert dates to datetime for filtering
+    mta_data['Date'] = pd.to_datetime(mta_data['Date'], format='%m/%d/%Y')
+
+    # Filter the data for the user-selected time range
+    filtered_data = mta_data[
+        (mta_data['Date'] >= pd.to_datetime(start_date)) & 
+        (mta_data['Date'] <= pd.to_datetime(end_date))
+    ]
+
+    # Create a figure
+    fig = go.Figure()
+
+    # Add a box plot for each selected service
+    for service in services:
+        fig.add_trace(
+            go.Box(
+                y=filtered_data[service],
+                name=service,
+                boxmean="sd",  # Show mean and standard deviation
+                marker_color="blue",
+                line=dict(width=1),
+            )
+        )
+
+    # Update layout
+    fig.update_layout(
+        title=f"Daily Ridership Variability by Service ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})",
+        yaxis_title="Ridership",
+        xaxis_title=None,
+        template="plotly_white",
+        showlegend=False,
+        height=600  # Adjust height to avoid scrollbars
     )
 
     return fig
