@@ -141,7 +141,7 @@ def create_thousand_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         'Staten Island Railway'
     ]
     # Perform the division and update only those columns
-    df_thousands[columns_to_divide] = round(df[columns_to_divide] / 1000,0)
+    df_thousands[columns_to_divide] = round(df[columns_to_divide] / 1_000,0) #Removed dividing by 1_000
     return df_thousands
 
 def resample_data(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
@@ -291,7 +291,73 @@ def calculate_yoy_growth(mta_data: pd.DataFrame, baseline_period: pd.Series, cur
 
     return yoy_growth   
    
-    
+
+def prepare_comparison_table(mta_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare a comparison table for ridership metrics.
+
+    Args:
+        mta_data: DataFrame with ridership values by service and time.
+
+    Returns:
+        comparison_table: DataFrame with comparison metrics.
+    """
+    # Convert Date to datetime
+    mta_data['Date'] = pd.to_datetime(mta_data['Date'])
+
+    # Define time ranges
+    pre_pandemic_range = mta_data[mta_data['Date'] < '2020-03-11']
+    first_post_pandemic_range = mta_data[(mta_data['Date'].dt.year == 2021) & (mta_data['Date'].dt.month == 3) & (mta_data['Date'].dt.day < 11)]
+    current_year_range = mta_data[(mta_data['Date'].dt.year == 2024) & (mta_data['Date'].dt.month == 3) & (mta_data['Date'].dt.day < 11)]    
+
+    # Identify ridership columns
+    ridership_cols = [col for col in mta_data.columns if ': % of Pre-Pandemic' not in col and col != 'Date']
+    #ridership_cols = [col for col in mta_data.columns if col not in ['Date']]
+
+    # Summarise data for ridership metrics
+    pre_pandemic_totals = pre_pandemic_range[ridership_cols].sum()
+    first_post_pandemic_totals = first_post_pandemic_range[ridership_cols].sum()
+    current_year_totals = current_year_range[ridership_cols].sum()
+
+    # Calculate % of Pre-Pandemic as averages
+    pre_pandemic_averages = pre_pandemic_range[ridership_cols].mean()
+    post_pandemic_averages = first_post_pandemic_range[ridership_cols].mean()
+    current_year_averages = current_year_range[ridership_cols].mean()
+
+    post_pandemic_percentage = (post_pandemic_averages / pre_pandemic_averages) * 100
+    current_year_percentage = (current_year_averages / pre_pandemic_averages) * 100
+
+    # Create a comparison table
+    comparison_table = pd.DataFrame({
+        'Service': ridership_cols,
+        'Pre-Pandemic': pre_pandemic_totals.values,
+        'First Post-Pandemic Year': first_post_pandemic_totals.values,
+        'Current Year': current_year_totals.values,
+        '% of Pre-Pandemic (Post)': post_pandemic_percentage.values,
+        '% of Pre-Pandemic (Current)': current_year_percentage.values,
+    })
+
+    expected_columns = ['Pre-Pandemic', 'First Post-Pandemic Year', 'Current Year', 
+                    '% of Pre-Pandemic (Post)', '% of Pre-Pandemic (Current)']
+    missing_columns = [col for col in expected_columns if col not in comparison_table.columns]
+
+    if missing_columns:
+        raise ValueError(f"The following expected columns are missing: {missing_columns}")
+        
+    # Format the table
+   # Format numeric columns with commas and round percentages
+    comparison_table['Pre-Pandemic'] = comparison_table['Pre-Pandemic'].map('{:,.0f}'.format)
+    comparison_table['First Post-Pandemic Year'] = comparison_table['First Post-Pandemic Year'].map('{:,.0f}'.format)
+    comparison_table['Current Year'] = comparison_table['Current Year'].map('{:,.0f}'.format)
+
+    # Format percentage columns with 1 decimal place
+    comparison_table['% of Pre-Pandemic (Post)'] = comparison_table['% of Pre-Pandemic (Post)'].map('{:.1f}%'.format)
+    comparison_table['% of Pre-Pandemic (Current)'] = comparison_table['% of Pre-Pandemic (Current)'].map('{:.1f}%'.format)
+
+    return comparison_table
+
+
+
 def create_kpis(mta_data: pd.DataFrame) -> dict:
     """
     Creates the dictionary of KPIs for storing for later use.
@@ -328,5 +394,3 @@ def create_kpis(mta_data: pd.DataFrame) -> dict:
         'yoy_growth': yoy_growth
     }
     return kpis
-
-

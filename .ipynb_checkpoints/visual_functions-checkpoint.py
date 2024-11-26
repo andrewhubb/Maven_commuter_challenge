@@ -5,6 +5,7 @@ import dash_bootstrap_components as dbc
 from dash.dependencies import Output, Input
 from dash.exceptions import PreventUpdate
 from dash_bootstrap_templates import load_figure_template
+from dash import dash_table
 import dash_dangerously_set_inner_html
 import plotly.express as px
 from plotly.subplots import make_subplots  # Add this line
@@ -23,10 +24,13 @@ from config import (
 
 from support_functions import(
     calculate_baseline_ridership,
-    calculate_current_ridership
+    calculate_current_ridership,
+    prepare_comparison_table,
 )
 
 from typing import Tuple
+import json
+from io import StringIO
 
 def create_title():
     """ 
@@ -45,8 +49,8 @@ def create_title():
                     ]
                 )
             ]
-    
-def create_granularity_dropdown():
+   
+def create_granularity_dropdown() -> list:
     """
     Creates the granulatity dropdown
 
@@ -73,7 +77,7 @@ def create_granularity_dropdown():
          )       
     ]     
 
-def create_services_dropdown():
+def create_services_dropdown() -> list:
     """
     Creates the services dropdown
 
@@ -146,6 +150,8 @@ def create_sparkline(granular_data: pd.DataFrame, service: list, granularity: st
         plot_bgcolor='rgba(0,0,0,0)', # Transparent background for plot area
         paper_bgcolor='rgba(0,0,0,0)' # Transparent background for whole figure
     )
+
+    
     return sparkline_figure
 
    
@@ -383,30 +389,32 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
     Returns:
         fig: A Plotly Graph Objects figure.
     """
+    if granularity == 'Year':
+        granular_data['Year'] = granular_data['Year'].astype(str)
+        x_axis_values = granular_data['Year']  # Use the 'Year' column directly
+    else:
+        x_axis_values = granular_data['Date']  # Use the 'Date' column directly
+
+    
     fig = go.Figure()    
     # Create the chart for each service
     for service in selected_services:
         if service in granular_data.columns:
-            if granularity == 'Year':
-                fig.add_trace(
-                    go.Scatter(                    
-                        x=granular_data['Year'],
-                        y=granular_data[service],
-                        mode='lines',
-                        name=service,
-                        line=dict(color=full_colours[services.index(service)]),
-                    )
-                )    
-            else:
-                fig.add_trace(
-                    go.Scatter(                    
-                        x=granular_data['Date'],
-                        y=granular_data[service],
-                        mode='lines',
-                        name=service,
-                        line=dict(color=full_colours[services.index(service)]),
+            fig.add_trace(
+                go.Scatter(                    
+                    x=x_axis_values,
+                    y=granular_data[service],
+                    mode='lines',
+                    name=service,
+                    line=dict(color=full_colours[services.index(service)]),
+                    customdata=[service] * len(granular_data),  # Add full service name for tooltip
+                    hovertemplate=(
+                        '<b>Service:</b> %{customdata}<br>'  # Show full service name
+                        '<b>Date:</b> %{x|%d %B %Y}<br>'  # Format date nicely
+                        "<b>Ridership:</b> %{y:,.0f} (000's) <extra></extra>"  # Format ridership with commas
                     )
                 )
+            )
 
     # Set chart title and axis labels
     fig.update_layout(
@@ -415,15 +423,71 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
         yaxis_title='Average Ridership (Thousands)',
         template='plotly_white',
         plot_bgcolor='rgba(0,0,0,0)', # Transparent background for plot area
-        paper_bgcolor='rgba(0,0,0,0)' # Transparent background for whole figure
+        paper_bgcolor='rgba(0,0,0,0)', # Transparent background for whole figure
+        #width=800,  # Set fixed width
+        #height=600  # Set fixed height
     )
     
-    # Format the X and Y axes
-    fig.update_xaxes(showgrid=True, gridcolor='lightgrey')
-    fig.update_yaxes(showgrid=True, gridcolor='lightgrey',tickformat=',0f')        
+    # Set the x-axis range manually to avoid squeezing the chart
+    fig.update_xaxes(
+        range=[granular_data['Date'].min(), granular_data['Date'].max()],  # Ensures the x-axis starts from the first date
+        showgrid=False, gridcolor='#F2F2F2'
+    )
+    fig.update_yaxes(
+        showgrid=False, 
+        gridcolor='#F2F2F2', 
+        tickformat=',0f',        # Before was ',0f'        
+    )
     
-    return fig
+    if granularity == 'Month':
+        # Add an annotation with indented text and no padding
+        annotation_x1 = granular_data['Date'].iloc[0]
+        annotation_y1 = granular_data[selected_services[0]].iloc[0] # First service's initial value
+        # Corresponding y-value
+        annotation_x2 = granular_data['Date'].iloc[3]  # Choose a later date
+        annotation_y2 = granular_data[selected_services[-1]].iloc[3]  # Use the last service's value
+        
+        fig.add_annotation(
+            x=annotation_x1,  # x-coordinate from data (use actual value)
+            y=annotation_y1,  # y-coordinate from data (use actual value)
+            text="March 11, 2020<br>WHO Declared<br>Global Covid<br>Pandemic.",  # Text to be displayed
+            showarrow=True,  # Show an arrow from the annotation to the point
+            arrowhead=7,  # Arrowhead size
+            ax=40,  # x-coordinate of the arrow tail (relative to annotation)
+            ay=-10,  # y-coordinate of the arrow tail (relative to annotation)
+            font=dict(
+                family="Arial",  # Font family
+                size=12,  # Font size
+                color="black"  # Font color
+            ),
+            align="left",  # Align the text to the left of the annotation point
+            xanchor="left",  # Anchor the text to the left of the x-coordinate
+            yanchor="bottom",  # Anchor the text in the middle of the y-coordinate
+            bgcolor="white",  # Background color for text
+            opacity=0.8,  # Opacity of the annotation text        
+        )
+        
+        fig.add_annotation(        
+            x=annotation_x2,  # x-coordinate from data (use actual value)
+            y=annotation_y2,  # y-coordinate from data (use actual value)
+            text="Monday, July 20th, 2020<br>NYC Starts Phase 4<br>of Reopening Plan.",  # Text to be displayed
+            showarrow=True,  # Show an arrow from the annotation to the point
+            arrowhead=7,  # Arrowhead size
+            ax=130,  # x-coordinate of the arrow tail (relative to annotation)
+            ay=-180,  # y-coordinate of the arrow tail (relative to annotation)
+            font=dict(
+                family="Arial",  # Font family
+                size=12,  # Font size
+                color="black"  # Font color
+            ),        
+            align="left",  # Align the text to the right of the annotation point
+            xanchor="left",  # Anchor the text to the right of the x-coordinate
+            yanchor="bottom",  # Anchor the text in the top of the y-coordinate
+            bgcolor="white",  # Background color for text
+            opacity=0.8,  # Opacity of the annotation text
+        )
 
+    return fig
 
 
 def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Figure:
@@ -446,9 +510,9 @@ def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Fi
     if granularity == 'Year':
         df_filtered = df_filtered.iloc[:, 1:-1]
     else:
-        df_filtered = df_filtered.iloc[:,1:].corr().round(3)
+        df_filtered = df_filtered.iloc[:,1:].corr().round(2)
         
-    correlation_matrix = df_filtered.corr().round(3)
+    correlation_matrix = df_filtered.corr().round(2)
     min_value = correlation_matrix.min().min()
     
     # Create heatmap
@@ -504,6 +568,12 @@ def create_dual_axis_chart(granular_data: pd.DataFrame,granularity: str, selecte
                     mode='lines',                        
                     name=f'{service} Ridership',
                     line=dict(color=full_colours[services.index(service)]),
+                    customdata=[service] * len(granular_data),  # Add full service name for tooltip
+                    hovertemplate=(
+                            '<b>Service:</b> %{customdata}<br>'  # Show full service name
+                            '<b>Date:</b> %{x|%d %B %Y}<br>'  # Format date nicely
+                            "<b>Ridership:</b> %{y:,.0f} (000's)<extra></extra>"  # Format ridership with commas
+                        )
                 ),
                 secondary_y=False
             )    
@@ -515,7 +585,13 @@ def create_dual_axis_chart(granular_data: pd.DataFrame,granularity: str, selecte
                     y=granular_data[f'{service}: % of Pre-Pandemic'],
                     mode='lines',
                     name=f'{service} Recovery %',
-                    line=dict(color=full_colours_tinted[services.index(service)], dash='dot')
+                    line=dict(color=full_colours_tinted[services.index(service)], dash='dot'),
+                    customdata=[service] * len(granular_data),  # Add full service name for tooltip
+                    hovertemplate=(
+                            '<b>Service:</b> %{customdata}<br>'  # Show full service name
+                            '<b>Date:</b> %{x|%d %B %Y}<br>'  # Format date nicely
+                            "<b>Recovery:</b> %{y:.0f}%<extra></extra>"  # Format ridership with commas
+                        )
                 ),
                 secondary_y=True
             )
@@ -590,13 +666,17 @@ def create_recovery_bar_chart(granular_data: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         
         title='MTA Service Recovery Since 2020',
-        xaxis_title="Recovery Percentage (% of Pre-Pandemic)",
+        xaxis_title=None, #"Recovery Percentage (% of Pre-Pandemic)",
         yaxis_title=None,
         xaxis_tickformat=".0f",  # Ensure whole number format
         yaxis=dict(
             automargin=True,  # Adjusts margin to avoid overlap
             ticklabelposition="outside"  # Move labels outside for spacing
         ),
+        xaxis=dict(                
+            showticklabels=False,  # Hides the y-axis tick labels
+            showgrid=False         # Optionally hides the grid lines for the y-axis
+        ),  
         template="plotly_white",
         margin=dict(l=150)  # Increase left margin for better spacing
     )
@@ -828,24 +908,34 @@ def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list
         trendline_y = slope * x + intercept
 
         # Scatter plot for the selected service's ridership
-        fig.add_trace(go.Scatter(
-            x=service_data['Date'],
-            y=service_data[service_name],
-            mode='markers',
-            name=f'{service_name} Ridership',
-            marker=dict(size=8),
-            showlegend=True
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=service_data['Date'],
+                y=service_data[service_name],
+                mode='markers',
+                name=f'{service_name} Ridership',
+                marker=dict(size=8),
+                showlegend=True,
+                customdata=[service_name] * len(mta_data),  # Add full service name for tooltip
+                    hovertemplate=(
+                            '<b>Service:</b> %{customdata}<br>'  # Show full service name
+                            '<b>Date:</b> %{x|%d %B %Y}<br>'  # Format date nicely
+                            "<b>Ridership:</b> %{y:,.0f}<extra></extra>"  # Format ridership with commas
+                        )
+            )
+        )
 
         # Add the trendline for the selected service
-        fig.add_trace(go.Scatter(
-            x=service_data['Date'],
-            y=trendline_y,
-            mode='lines',
-            name=f'{service_name} Trendline',
-            line=dict(dash='dash'),
-            showlegend=True
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=service_data['Date'],
+                y=trendline_y,
+                mode='lines',
+                name=f'{service_name} Trendline',
+                line=dict(dash='dash'),
+                showlegend=True
+            )
+        )
 
     # Customize the layout
     fig.update_layout(
@@ -919,9 +1009,17 @@ def create_before_after_chart(mta_data: pd.DataFrame, services: list) -> go.Figu
     fig.add_trace(
         go.Bar(
             x=sorted_services,
-            y=sorted_pre_pandemic,
+            #y=sorted_pre_pandemic,
+            y=[value / 1_000_000 for value in sorted_pre_pandemic],
             name="Pre-Pandemic",
             marker_color="blue",
+            customdata=sorted_services,
+            text=[f"{value / 1_000_000:.1f}M" for value in sorted_pre_pandemic],  # Add formatted data labels
+            textposition="outside",  # Position labels outside the bars            
+            hovertemplate=(
+                '<b>Service:</b> %{customdata}<br>'  # Show full service name                    
+                "<b>Ridership:</b> %{y:,.1f}M<extra></extra>"  # Format ridership with commas
+            )
         )
     )
 
@@ -929,9 +1027,17 @@ def create_before_after_chart(mta_data: pd.DataFrame, services: list) -> go.Figu
     fig.add_trace(
         go.Bar(
             x=sorted_services,
-            y=sorted_post_pandemic,
+            #y=sorted_post_pandemic,
+            y=[value / 1_000_000 for value in sorted_post_pandemic],
             name="Post-Pandemic",
             marker_color="red",
+            customdata=sorted_services,
+            text=[f"{value / 1_000_000:.1f}M" for value in sorted_post_pandemic],  # Add formatted data labels
+            textposition="outside",  # Position labels outside the bars            
+            hovertemplate=(
+                '<b>Service:</b> %{customdata}<br>'  # Show full service name                    
+                "<b>Ridership:</b> %{y:,.1f}M<extra></extra>"  # Format ridership with commas
+            )
         )
     )
 
@@ -939,7 +1045,7 @@ def create_before_after_chart(mta_data: pd.DataFrame, services: list) -> go.Figu
     fig.update_layout(
         title="Service Ridership Comparison: Pre-Pandemic vs. Post-Pandemic",
         xaxis_title=None,
-        yaxis_title="Total Ridership",
+        yaxis_title=None,
         barmode="group",  # Group bars side-by-side
         template="plotly_white",
         legend=dict(
@@ -948,7 +1054,12 @@ def create_before_after_chart(mta_data: pd.DataFrame, services: list) -> go.Figu
             y=1.02,
             xanchor="right",
             x=1
-        )
+        ),
+        yaxis=dict(       
+            range=[0, 50],
+            showticklabels=False,  # Hides the y-axis tick labels
+            showgrid=False         # Optionally hides the grid lines for the y-axis
+        )        
     )
 
     return fig
@@ -1003,3 +1114,44 @@ def create_daily_variability_boxplot(mta_data: pd.DataFrame, services: list, sta
     )
 
     return fig
+
+
+def create_comparison_table(mta_data: pd.DataFrame) -> dbc.Table:
+    """
+    Create a dbc.Table visual for ridership comparison metrics.
+
+    Args:
+        mta_data: DataFrame with ridership values by service and time.
+
+    Returns:
+        display_table: dbc.Table object for display.
+    """
+    # Prepare the comparison table data
+    comparison_table = prepare_comparison_table(mta_data)
+
+    # Generate table header
+    header = [html.Th(col) for col in comparison_table.columns]
+
+    # Generate table rows
+    rows = [
+        html.Tr([html.Td(value) for value in row])
+        for row in comparison_table.itertuples(index=False, name=None)
+    ]
+
+    # Create the dbc.Table
+    display_table = dbc.Table(
+        # Table content
+        children=[
+            html.Thead(html.Tr(header)),
+            html.Tbody(rows)
+        ],
+        bordered=True,
+        striped=True,
+        hover=True,
+        responsive=True,
+        className="table-sm",  # Smaller font and padding for compact display
+    )
+
+    return display_table
+
+
