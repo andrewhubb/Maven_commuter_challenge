@@ -1,0 +1,64 @@
+body {
+    overflow-y: auto; /* Always show vertical scrollbar when content overflows */
+}
+
+
+.info-button {
+    background-color: transparent; /* Circle background */
+    color: #007bff;                /* Text color */
+    border: medium solid #007bff;  /* Set border */
+    border-radius: 50%;            /* Make circular */
+    width: 20px;                   /* Circle width */
+    height: 20px;                  /* Circle height */
+    font-size: 16px;               /* Font size */
+    text-align: center;            /* Center the "i" horizontally */
+    cursor: pointer;               /* Pointer cursor on hover */
+    line-height: 12px;             /* Center the "i" vertically */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Optional shadow */
+}
+
+.info-button:hover {
+    color: #D35940;
+    /*color: #0056b3;*/                 /* Darker blue on hover */
+    /* border: medium solid #0056b3; */ /* Set border */
+    border: medium solid #D35940;
+    background-color: transparent;  /* Remove Background */
+}
+
+.tab-content {
+    height: 90vh; /* Set height to a value that makes sense for your layout */
+    overflow-y: auto; /* Add vertical scroll if content exceeds */
+    padding: 7px; /* Optional: Add padding for better spacing */
+    border: 1px solid #ccc; /* Optional: Add border to visually distinguish the content */
+}
+
+.no-gutter-row > .col {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+
+.dashboard-container {
+    width: 2000px;
+    height: 1440px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 50px;
+    margin-bottom: 50px;
+    /*background-color: #010103;*/
+    border: 1px solid #cccccc;
+    border-radius: 10px;
+}
+
+/* Always show a border for the dropdown */
+.custom-dropdown .Select-placeholder {
+    border: 1px solid lightgrey; /* light grey border */
+    border-radius: 4px; /* Rounded corners */
+    padding: 4px;
+}
+
+/* Style the dropdown when it is selected or focused */
+.custom-dropdown .Select--single {
+    border: 1px solid lightgrey; /* light grey border */
+    border-radius: 4px; /* Same styling as above */
+    padding: 4px;
+}
