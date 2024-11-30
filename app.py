@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[2]:
-
-
 import pandas as pd
 import numpy as np
 from dash import Dash, dcc, html, dash_table
@@ -18,18 +12,18 @@ from dash_extensions.enrich import Trigger
 
 from config import (
     services,
-    service_colours,    
+    service_colours,
     dark_blue,
     dark_orange
 )
 
 from visual_functions import (
-    create_title, 
+    create_title,
     create_key_insights,
     create_kpi_cards,
     create_ridership_cards,
-    create_granularity_dropdown, 
-    create_services_dropdown,    
+    create_granularity_dropdown,
+    create_services_dropdown,
     create_service_line_chart,
     create_correlation_matrix,
     create_dual_axis_chart,
@@ -44,27 +38,18 @@ from visual_functions import (
 )
 
 from support_functions import (
-    calculate_total_recovery, 
-    create_thousand_dataframe,     
-    resample_data, 
+    calculate_total_recovery,
+    create_thousand_dataframe,
+    resample_data,
     find_free_port,
     create_metrics,
     prepare_comparison_table,
-    create_kpis,    
+    create_kpis,
 )
 import json
 from io import StringIO # This is to solve the problem of future pandas versions removing the ability to directly pass a JSON string to read_json
 
-
-# In[3]:
-
-
 mta_data = pd.read_csv('./data/MTA_Daily_Ridership.csv',parse_dates=['Date'])
-
-
-# In[4]:
-
-
 mta_data = mta_data.rename(columns={
             'Subways: Total Estimated Ridership' : 'Subways',
             'Subways: % of Comparable Pre-Pandemic Day' : 'Subways: % of Pre-Pandemic',
@@ -83,19 +68,13 @@ mta_data = mta_data.rename(columns={
             },
             )
 
-
-# The following is The code for the Dash app I will keep it in one cell
-
-# In[6]:
-
-
 dbc_css = 'https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css'
 
 app = Dash(
     __name__, external_stylesheets=[dbc.themes.COSMO, dbc_css],  # Was PULSE
     suppress_callback_exceptions=True
 )
-server = app.server
+load_figure_template('COSMO')
 # comparison_table = create_comparison_table(mta_data)
 kpis = create_kpis(mta_data)
 
@@ -170,11 +149,11 @@ app.layout = dbc.Container(
                                                 id='service_line_chart',
                                                 config={
                                                     'displayModeBar': False  # Turn off the toolbar
-                                                },                                                                               
+                                                },
                                             ),
                                         ],
                                         type='circle',  # Loading spinner type
-                                    ),                                    
+                                    ),
                                     style={'backgroundColor': 'transparent'},
                                 ),
                             ],
@@ -397,7 +376,7 @@ app.layout = dbc.Container(
                     # Second row: Comparison table
                         dbc.Row(
                         [
-                            dbc.Col(                            
+                            dbc.Col(
                                 [
                                     html.Div(
                                         [
@@ -458,7 +437,7 @@ app.layout = dbc.Container(
                     id='detailed_service_trends',
                     label='Detailed Service Trends',
                     className='dbc',
-                    children=[                        
+                    children=[
                         dbc.Row([
                             dbc.Col(
                                 dcc.Graph(
@@ -502,9 +481,9 @@ app.layout = dbc.Container(
                         ),
                     ],
                 ),
-                dcc.Tab(                    
+                dcc.Tab(
                     id='whats-next',
-                    label='What\'s Next?',                    
+                    label='What\'s Next?',
                     className='dbc',
                     children=[
                         dbc.Row([
@@ -515,7 +494,7 @@ app.layout = dbc.Container(
                         ]
                         )
                     ]
-                )    	                       
+                )
             ],
             style={'margin-bottom': '0.8em'},
         ),
@@ -657,28 +636,3 @@ def display_information(granularity_dropdown_value, service_dropdown_value, sele
         daily_variability_boxplot,
         comparison_table,
     )
-
-
-if __name__ == '__main__':
-    free_port = find_free_port()
-    print(f'Port used = {free_port}')
-    app.run_server(debug=True, mode='inline', port=free_port)
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
