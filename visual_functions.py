@@ -1261,6 +1261,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
     # Create a figure
     fig = go.Figure()
     chart_type = 'Pre-Pandemic'
+    chart_title = 'Ridership Composition - ' + chart_type
     # Add pre-pandemic pie chart
     fig.add_trace(
         go.Pie(
@@ -1283,7 +1284,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
 
     # Add post-pandemic pie chart
 
-    chart_type = 'Post-Pandemic'
+    chart_type = 'Post-Pandemic'    
     fig.add_trace(
         go.Pie(
             labels=post_pandemic_totals.index,
@@ -1324,7 +1325,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
     # Add toggle buttons for annotations and pie chart visibility
     fig.update_layout(
         title=dict(
-            text='Ridership Composition', # Chart title text            
+            text='Ridership Composition', # Chart title text                        
             x=0,                     # Align to the left
             xanchor='left',          # Anchor the title to the left
             font=dict(size=16)       # Optional: Adjust font size or style
@@ -1500,7 +1501,14 @@ def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list
                 line=dict(
                     dash='dash',
                     color=service_colours[service]['tinted_colour']),
-                showlegend=True
+                showlegend=True,
+                customdata=service_data[[service]].assign(Service=service).to_numpy(),
+                hovertemplate=(
+                    # Display service name within the tooltip
+                    '<b>Service:</b> %{customdata[1]}<br>'
+                    '<b>Date:</b> %{x|%d %B %Y}<br>'
+                    '<b>Ridership:</b> %{y:,.0f}<extra></extra>'
+                )
             )
         )
 
