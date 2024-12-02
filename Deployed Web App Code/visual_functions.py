@@ -969,7 +969,7 @@ def create_dual_axis_chart(granular_data: pd.DataFrame, granularity: str, select
         paper_bgcolor='rgba(0,0,0,0)',
         title='Ridership and Recovery Percentage by Service',
         xaxis_title=None,
-        yaxis_title='Ridership',
+        yaxis_title=None,
         xaxis=dict(automargin=True,
                    showgrid=False  # Hide gridlines for x-axis
                    ),
@@ -996,7 +996,7 @@ def create_dual_axis_chart(granular_data: pd.DataFrame, granularity: str, select
     )
 
     # Update axis ranges and layout
-    fig.update_yaxes(title_text='Ridership',
+    fig.update_yaxes(title_text=None,
                      tickformat=',0f', secondary_y=False)
     fig.update_yaxes(title_text='Recovery Percentage (%)',
                      tickformat='.0f', secondary_y=True)
@@ -1520,9 +1520,9 @@ def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for plot area
         # Transparent background for whole figure
         paper_bgcolor='rgba(0,0,0,0)',
-        title='Recovery Trajectories for Selected Services',
+        title='Ridership Recovery Trajectories for Selected Services',
         xaxis_title=None,
-        yaxis_title='Ridership',
+        yaxis_title=None,
         template='plotly_white',
         margin=dict(
             r=150,  # Increase the right margin to accommodate the legend
