@@ -22,7 +22,6 @@ from config import (
 )
 
 from visual_functions import (
-    create_title,
     create_key_insights,
     create_kpi_cards,
     create_ridership_cards,
@@ -284,7 +283,7 @@ app.layout = dbc.Container(
                         ),
 
 
-                    ]
+                    ],
                 ),
                 # Ridership Comparisons Tab
                 dcc.Tab(

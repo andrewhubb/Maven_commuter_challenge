@@ -202,7 +202,7 @@ def create_sparkline(granular_data: pd.DataFrame, service: list, granularity: st
     )
     sparkline_figure.update_layout(
         height=60,
-        margin=dict(l=10, r=10, t=10, b=10),
+        margin=dict(l=10, r=10, t=10, b=20),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for plot area
