@@ -1,6 +1,13 @@
 import pandas as pd
-from dash import dcc, html
+import numpy as np
+from dash import Dash, dcc, html, dash_table
 import dash_bootstrap_components as dbc
+from dash.dependencies import Output, Input
+from dash.exceptions import PreventUpdate
+from dash_bootstrap_templates import load_figure_template
+from dash import dash_table
+import dash_dangerously_set_inner_html
+import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from scipy.stats import linregress
@@ -13,15 +20,16 @@ from config import (
 )
 
 from support_functions import (
+    calculate_baseline_ridership,
+    calculate_current_ridership,
     prepare_comparison_table,
 )
 
+from typing import Tuple
+import json
+from io import StringIO
 import textwrap
 
-import logging
-
-logging.basicConfig(filename='debug.log', level=logging.DEBUG,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def wrap_comment(comment, width=50):
     '''Wrap the comment text to a specified width.'''
@@ -29,10 +37,10 @@ def wrap_comment(comment, width=50):
 
 
 def create_title():
-    '''
+    ''' 
     Creates the report title
 
-    Returns:
+    Returns: 
         the dbc.Col array with children that holds the html code for the title
     '''
     return [
@@ -47,33 +55,33 @@ def create_title():
     ]
 
 def create_key_insights():
-    '''
+    ''' 
     Creates the report key insights
 
-    Returns:
+    Returns: 
         the dbc.Col array with children that holds the html code for the insights
     '''
     return [
         dbc.Col(
             [
-                html.P([
+                html.P([            
                     html.B('Key Insights:'),
                     ' Metro-North and Access-A-Ride have shown the strongest recovery, exceeding pre-pandemic ridership levels, with Metro-North now at 135.5% and Access-A-Ride at 124.6% of their pre-pandemic values. Bridges & Tunnels have also surpassed pre-pandemic levels at 109.2%. In contrast, Subways and Buses are recovering more slowly, with current ridership at 84.0% and 72.8% of pre-pandemic levels, respectively.',
                 ],
                 id='key_insights',
                 className='card-text',
-                style={'font-size': '0.8em', 'margin-bottom': '0.8em'}
-                ),
+                style={'font-size': '0.8em', 'margin-bottom': '0.8em'}         
+                ),                
             ]
         )
     ]
-
+    
 def create_whats_next() -> list:
     '''
     Creates the What is next Tab content
 
     Returns:
-        the html.Div block array
+        the html.Div block array 
     '''
     whats_next_content = html.Div([
     html.H4('What\'s Next?', style={'margin-bottom': '1em'}),  # Title for the tab
@@ -82,7 +90,7 @@ def create_whats_next() -> list:
         html.Li([html.B('Congestion Charge Impact:'),' Starting in January 2025, New York City will implement the first congestion charge in North America, aimed at reducing traffic in highly congested areas of the city. This charge will impact drivers entering certain zones during peak hours, making it more expensive to drive into the city. This new policy is expected to:']),
         html.Ul([
             html.Li(['Reduce the volume of private cars on the road, potentially lowering the demand for ',html.B('Bridges and Tunnels.')]),
-            html.Li(['Increase ridership on public transportation services like ',html.B('Subways'),', ',html.B('Buses'),', ',html.B('Metro-North'),', and',html.B('LIRR'),' as commuters seek more affordable alternatives to driving.']),
+            html.Li(['Increase ridership on public transportation services like ',html.B('Subways'),', ',html.B('Buses'),', ',html.B('Metro-North'),', and',html.B('LIRR'),' as commuters seek more affordable alternatives to driving.']),            
             html.Li([html.B('Impact recovery trends:'),' Services that have not yet returned to pre-pandemic levels, such as ', html.B('Buses'),' and ',html.B('Staten Island Railway'),' might see significant growth post-2025 as driving becomes less attractive.']),
             html.Li([html.B('Projections:'),' If a significant percentage of current car users switch to public transportation, the ',html.B('MTA'),' could see recovery levels for services like ', html.B('Subways'),' and ',html.B('Buses'),' exceed 100% of pre-pandemic ridership, driving continued growth and reducing congestion on city streets.']),
             html.Li([html.B('Monitor Effects of Congestion Pricing:'),' After the implementation of congestion charges, it will be essential to monitor its effect on public transit usage and adjust service offerings accordingly.']),
@@ -91,11 +99,11 @@ def create_whats_next() -> list:
         html.Li([html.B('Infrastructure Investment:'),' The ',html.B('MTA'),' should prioritize investments in improving train, track, and signal reliability. Service reliability will be crucial to gain the trust of commuters and keep them using public transit.']),
         html.Li([html.B('Accessibility Improvements:'),' The ',html.B('MTA'),'> should resume and complete the ',html.B('23 subway station elevator projects'),' that were put on hold. Improving accessibility will directly impact ridership, especially for those relying on Access-A-Ride and those with mobility challenges.']),
         html.Li([html.B('Cost Control and Fare Evasion Measures:'),' Keeping fare prices affordable while controlling ',html.B('fare evasion'),' is essential to maintain financial sustainability. Reducing ',html.B('fare evasion'),' would increase funds available to invest in service reliability.']),
-    ],
+    ], 
             style={
-                'margin-top': '1em',
+                'margin-top': '1em', 
                 'font-size': '14px'
-            }
+            }           
            )  # Styling for bullet points
 ], style={'padding': '2em'})  # Additional padding for overall block styling
 
@@ -104,7 +112,7 @@ def create_granularity_dropdown() -> list:
     '''
     Creates the granulatity dropdown
 
-    Returns:
+    Returns: 
         the dbc.Card array with children that holds the dropdown
     '''
     return [
@@ -132,7 +140,7 @@ def create_services_dropdown() -> list:
     '''
     Creates the services dropdown
 
-    Returns:
+    Returns: 
         the dbc.Card array with children that holds the dropdown
     '''
     return [
@@ -202,7 +210,7 @@ def create_sparkline(granular_data: pd.DataFrame, service: list, granularity: st
     )
     sparkline_figure.update_layout(
         height=60,
-        margin=dict(l=10, r=10, t=10, b=20),
+        margin=dict(l=10, r=10, t=10, b=10),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False),
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for plot area
@@ -224,41 +232,24 @@ def create_kpi_cards(kpis):
     '''
     Create a Row of cards to show KPI values.
 
-    Args:
+    Args:        
         kpis: The KPI values from the kpi_store
 
     Returns:
         cards: A list containing the cards to display on the row
     '''
-    logging.debug(f"Started create_kpi_cards with: {kpis}")
-    if not isinstance(kpis, dict):
-        logging.error(f"kpis is not a dictionary. Received: {kpis}")
-        raise TypeError("kpis must be a dictionary.")
-
-    if 'total_ridership' not in kpis:
-        logging.error(f"Key 'total_ridership' is missing in kpis. Available keys: {kpis.keys()}")
-        raise KeyError("Missing key 'total_ridership' in kpis.")
-
-    # Proceed with creating cards
-    total_ridership = kpis["total_ridership"]
-    highest_ridership_day = kpis["highest_ridership_day"]
-    total_recovery = kpis["total_recovery"]
-    top_service = kpis["top_service"]
-    recovery_percentage = kpis["recovery_percentage"]
-
-    # Continue with the card creation logic
     # Set the height of the cards for all the cards on this row
     card_height = '100px'
     detail_font_weight = '600'
 
-    total_ridership = kpis["total_ridership"]
-    highest_ridership_day = kpis["highest_ridership_day"]
-    total_recovery = kpis["total_recovery"]
-    top_service = kpis["top_service"]
-    recovery_percentage = kpis["recovery_percentage"]
-    yoy_growth = kpis["yoy_growth"]
-    avg_lockdown_ridership = kpis["avg_lockdown_ridership"]
-    avg_post_lockdown_ridership = kpis["avg_post_lockdown_ridership"]
+    total_ridership = kpis['total_ridership']
+    highest_ridership_day = kpis['highest_ridership_day']
+    total_recovery = kpis['total_recovery']
+    top_service = kpis['top_service']
+    recovery_percentage = kpis['recovery_percentage']
+    yoy_growth = kpis['yoy_growth']
+    avg_lockdown_ridership = kpis['avg_lockdown_ridership']
+    avg_post_lockdown_ridership = kpis['avg_post_lockdown_ridership']
 
     value_text_style = {'font-size': '1.25em',
                         'font-weight': 'bold',
@@ -348,26 +339,26 @@ def create_kpi_cards(kpis):
                         html.P(f'{total_recovery}',
                                className='card-text',
                                style=value_text_style
-                               ),
+                               ),                                
                     ]),
                     style={
-                        'height': card_height,
+                        'height': card_height,                    
                         'border-radius': '15px',  # Rounded corners
                         'padding': '0.1em',
                         'max-width': '150px',
                         'position': 'relative',  # Relative position for the button to align properly
-                        'display': 'flex',
+                        'display': 'flex', 
                         'align-items': 'center'
                     },
-
+    
                 ),
-
+                
             ],
             style={
                     'margin-bottom': '0.8em',
                     'position': 'relative'  # Relative position for the column
             },
-            width='auto'
+            width='auto'            
         ),
         dbc.Col(
             dbc.Card(
@@ -386,7 +377,7 @@ def create_kpi_cards(kpis):
                            )
                 ]),
                 style={
-                    'height': card_height,
+                    'height': card_height,                    
                     'border-radius': '15px',  # Rounded corners
                     'padding': '0.1em',
                     'max-width': '220px'
@@ -518,7 +509,7 @@ def create_kpi_cards(kpis):
         },
         width='auto'
         ),
-
+                    
         dbc.Col(
             dbc.Card(
                 dbc.CardBody([
@@ -536,12 +527,12 @@ def create_kpi_cards(kpis):
                            )
                 ]),
                 style={
-                    'height': card_height,
+                    'height': card_height,                    
                     'border-radius': '15px',  # Rounded corners
                     'padding': '0.1em',
                     'max-width': '150px'
                 }
-            ),
+            ),            
             style={'margin-bottom': '0.8em'},
             width='auto'
         )
@@ -550,12 +541,8 @@ def create_kpi_cards(kpis):
     return cards
 
 
+
 def create_ridership_cards(granular_data: pd.DataFrame, selected_services: list, granularity: str, metrics: dict) -> go.Figure:
-
-    logging.debug(f'Granular Data: {granular_data.head()}')
-    logging.debug(f'Selected Services: {selected_services}')
-    logging.debug(f'Metrics: {metrics}')
-
     card_height = '210px'
     up_arrow = chr(8593)  # Upward arrow (↑)
     down_arrow = chr(8595)  # Downward arrow (↓)
@@ -585,7 +572,8 @@ def create_ridership_cards(granular_data: pd.DataFrame, selected_services: list,
             }
             percent_change_style = {
                 'margin-bottom': '0.2em', 'color': dark_orange}
-            percent_change_text = f'% Change: {percent_change:.1f}% {down_arrow}'
+            percent_change_text = f'% Change: {
+                percent_change:.1f}% {down_arrow}'
         else:
             card_text_style = {'font-size': '2em',
                                'font-weight': 'bold', 'text-align': 'center'}
@@ -604,7 +592,8 @@ def create_ridership_cards(granular_data: pd.DataFrame, selected_services: list,
                         html.P(percent_change_text,
                                style=percent_change_style),
                         dcc.Graph(
-                            id=f'{service.lower().replace(" ", "_").replace("-", "_")}_sparkline',
+                            id=f'{service.lower().replace(
+                                ' ', '_').replace('-', '_')}_sparkline',
                             figure=create_sparkline(
                                 granular_data, service, granularity, metrics),
                             config={'displayModeBar': False,
@@ -659,12 +648,12 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
 
     max_labels = 12 if granularity == 'Month' else 8
     label_step = max(1, len(granular_data) // max_labels)
-
+    
     if granularity == 'Year':
         x_axis_tickvals = granular_data['Year'][::label_step]
     else:
         x_axis_tickvals = granular_data['Date'][::label_step]
-
+        
     x_axis_ticktext = [formatted_labels[i] for i in range(0, len(formatted_labels), label_step)]
 
     fig = go.Figure()
@@ -688,11 +677,11 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
                         '<b>Ridership:</b> %{y:,.0f} (000\'s) <extra></extra>'
                     )
                 )
-            )
-
+            )       
+    
     # Set chart title and axis labels
     fig.update_layout(
-        title=f'{granularity} Recovery Trends in Ridership by Time Period',
+        title=f'{granularity} Recovery Trends in Ridership by Time Period',        
         xaxis_title=None,
         yaxis_title='Average Ridership (Thousands)',
         template='plotly_white',
@@ -714,7 +703,7 @@ def create_service_line_chart(granular_data: pd.DataFrame, granularity: str, sel
         range=[granular_data['Date'].min(), granular_data['Date'].max()],
         showgrid=False, gridcolor='#F2F2F2',
         tickvals=x_axis_tickvals,
-        ticktext=x_axis_ticktext
+        ticktext=x_axis_ticktext        
     )
     fig.update_yaxes(
         showgrid=False,
@@ -784,11 +773,11 @@ def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Fi
     '''
     Creates a correlation matrix with a heatmap colouring.
 
-    Args:
+    Args: 
         granular_data: Aggregated DataFrame with recovery percentage columns and a time column.
-        granularity  : The granularity level ('Month', 'Quarter', 'Year').
+        granularity  : The granularity level ('Month', 'Quarter', 'Year').        
 
-    Returns:
+    Returns: 
         fig:  Plotly Figure object with the heatmap.
     '''
     # Filter and process data based on granularity
@@ -824,7 +813,7 @@ def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Fi
     for i, row in enumerate(correlation_matrix.index[::-1]):  # Reverse index to match heatmap
         for j, col in enumerate(correlation_matrix.columns):
             value = correlation_matrix.values[::-1, :][i][j]  # Reverse values accordingly
-
+            
             # Set dynamic color based on value (blue cells need white text)
             text_color = 'white' if value < -0.5 or value > 0.7 else '#404040'
             display_value = f'{int(value)}' if value == 1 else f'{value:.2f}' # Format 1.00 as 1 like in other correlation matrices.
@@ -863,7 +852,7 @@ def create_correlation_matrix(granular_data: pd.DataFrame, granularity) -> go.Fi
                 color='#FFFFFF',
                 size=14
             ),
-        )
+        )        
     )
 
     return fig
@@ -873,12 +862,12 @@ def create_dual_axis_chart(granular_data: pd.DataFrame, granularity: str, select
     '''
     Creates a dual axis chart showing the average recovery percentage by service accross all time periods.
 
-    Args:
+    Args: 
         granular_data    : Aggregated DataFrame with recovery percentage columns and a time column.
         granularity      : The granularity level ('Month', 'Quarter', 'Year').
         selected_services: The list of services selected from the services dropdown.
 
-    Returns:
+    Returns: 
         fig: Plotly Figure object with the dual axis chart.
     '''
 
@@ -906,16 +895,16 @@ def create_dual_axis_chart(granular_data: pd.DataFrame, granularity: str, select
 
     max_labels = 12 if granularity == 'Month' else 8
     label_step = max(1, len(granular_data) // max_labels)
-
+    
     if granularity == 'Year':
         x_axis_tickvals = granular_data['Year'][::label_step]
     else:
         x_axis_tickvals = granular_data['Date'][::label_step]
-
+        
     x_axis_ticktext = [formatted_labels[i] for i in range(0, len(formatted_labels), label_step)]
 
 
-
+    
     # Create the dual-axis chart
     fig = make_subplots(specs=[[{'secondary_y': True}]])
 
@@ -969,7 +958,7 @@ def create_dual_axis_chart(granular_data: pd.DataFrame, granularity: str, select
         paper_bgcolor='rgba(0,0,0,0)',
         title='Ridership and Recovery Percentage by Service',
         xaxis_title=None,
-        yaxis_title=None,
+        yaxis_title='Ridership',
         xaxis=dict(automargin=True,
                    showgrid=False  # Hide gridlines for x-axis
                    ),
@@ -996,14 +985,14 @@ def create_dual_axis_chart(granular_data: pd.DataFrame, granularity: str, select
     )
 
     # Update axis ranges and layout
-    fig.update_yaxes(title_text=None,
+    fig.update_yaxes(title_text='Ridership',
                      tickformat=',0f', secondary_y=False)
     fig.update_yaxes(title_text='Recovery Percentage (%)',
                      tickformat='.0f', secondary_y=True)
 
     fig.update_xaxes(
         tickvals=x_axis_tickvals,
-        ticktext=x_axis_ticktext,
+        ticktext=x_axis_ticktext,        
         #tickangle=45  # Optional: Angle for better readability
     )
     return fig
@@ -1013,15 +1002,15 @@ def create_recovery_bar_chart(mta_data: pd.DataFrame) -> go.Figure:
     '''
     Create a bar chart showing the average recovery percentage by service accross all time periods.
 
-    Args:
-        granular_data: Aggregated DataFrame with recovery percentage columns and a time column.
+    Args: 
+        granular_data: Aggregated DataFrame with recovery percentage columns and a time column.    
 
-    Returns:
+    Returns: 
         fig: Plotly Figure object with the bar chart.
     '''
 
     baseline_period = (mta_data['Date'] < '2020-03-11')
-
+         
     current_period = (mta_data['Date'].dt.year == 2024) & (
         mta_data['Date'].dt.month == 10) & (mta_data['Date'].dt.day < 11)
 
@@ -1038,14 +1027,14 @@ def create_recovery_bar_chart(mta_data: pd.DataFrame) -> go.Figure:
     service: (
         wrap_comment(
             'Access-A-Ride, providing transportation for people with disabilities, exceeded pre-pandemic levels at 124.6%, reflecting consistent need for accessible transportation.'
-        ) if service == 'Access-A-Ride' else
+        ) if service == 'Access-A-Ride' else 
         wrap_comment(
             'Bridges and Tunnels, Note: The upcoming congestion charge in January 2025 may lead to reduced usage of Bridges and Tunnels, as drivers may opt for public transportation.'
-        ) if service == 'Bridges and Tunnels' else
+        ) if service == 'Bridges and Tunnels' else         
         ''
     )
     for service in services
-}
+} 
 
     for service in services:
         baseline_ridership = mta_data.loc[baseline_period, service].sum()
@@ -1056,20 +1045,20 @@ def create_recovery_bar_chart(mta_data: pd.DataFrame) -> go.Figure:
                 (current_ridership / baseline_ridership) * 100, 1)
         else:
             recovery_percentage = 0
-
+    
         recovery_percentages[service] = recovery_percentage
-
+    
    # Set the bar colours from the service_colours dictionary
     bar_colours = [service_colours[service]['colour'] for service in services]
 
     # Calculate the average recovery
     average_recovery = pd.Series(recovery_percentages).sort_values(ascending=True)
     aligned_services = average_recovery.index.tolist()
-    #formatted_recovery = [f'{value:.1f}%' for value in average_recovery]
+    formatted_recovery = [f'{value:.1f}%' for value in average_recovery]
     # Assign Values to Customdata from dictionary
     comments = [comments_dict[service] for service in aligned_services]
     tooltip_customdata = [[service, comment] for service, comment in zip(aligned_services, comments)]
-
+       
     # Create the horizontal bar chart
     fig = go.Figure()
     fig.add_trace(
@@ -1089,7 +1078,7 @@ def create_recovery_bar_chart(mta_data: pd.DataFrame) -> go.Figure:
             ),
         )
     )
-
+    
     # Customize layout
     fig.update_layout(
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for plot area
@@ -1113,13 +1102,13 @@ def create_recovery_bar_chart(mta_data: pd.DataFrame) -> go.Figure:
             bgcolor='#0A1128',  # Background colour
             font=dict(
                 color='#FFFFFF',  # Text colour
-                size=14,           # Font size (optional)
+                size=14,           # Font size (optional)                
             ),
             align='left',  # Align text to the left for readability
             namelength=-1  # Prevent truncating long labels
         ),
         annotations=[
-            {
+            {                
                 'text': '<b>Metro-North</b> has shown the most complete recovery.',
                 'x': 0.5,  # Center it horizontally with the title
                 'y': 1.08,  # Position it above the chart
@@ -1132,7 +1121,7 @@ def create_recovery_bar_chart(mta_data: pd.DataFrame) -> go.Figure:
                 }
             }
         ]
-    )
+    )    
     return fig  # Return the chart figure
 
 
@@ -1251,7 +1240,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
         col for col in mta_data.columns if ': % of Pre-Pandemic' not in col and col != 'Date']
 
     # Filter the dataset to the pre- and post-pandemic date ranges
-    pre_pandemic_data = mta_data[mta_data['Date'] < '2020-03-11']
+    pre_pandemic_data = mta_data[mta_data['Date'] < '2020-03-11'] 
     post_pandemic_data = mta_data[
         (mta_data['Date'].dt.year == 2024) &
         (mta_data['Date'].dt.month == 10) &
@@ -1272,6 +1261,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
     # Create a figure
     fig = go.Figure()
     chart_type = 'Pre-Pandemic'
+    chart_title = 'Ridership Composition - ' + chart_type
     # Add pre-pandemic pie chart
     fig.add_trace(
         go.Pie(
@@ -1280,7 +1270,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
             name=chart_type,
             hole=0.60,
             sort=True,
-            direction='clockwise',
+            direction='clockwise',            
             marker=dict(colors=slice_colours),
             hoverinfo='skip',  # Skip default hover info to use hovertemplate
             hovertemplate=(
@@ -1294,7 +1284,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
 
     # Add post-pandemic pie chart
 
-    chart_type = 'Post-Pandemic'
+    chart_type = 'Post-Pandemic'    
     fig.add_trace(
         go.Pie(
             labels=post_pandemic_totals.index,
@@ -1302,7 +1292,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
             name=chart_type,
             hole=0.60,
             sort=True,
-            direction='clockwise',
+            direction='clockwise',            
             marker=dict(colors=slice_colours),
             hoverinfo='skip',  # Skip default hover info to use hovertemplate
             hovertemplate=(
@@ -1335,7 +1325,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
     # Add toggle buttons for annotations and pie chart visibility
     fig.update_layout(
         title=dict(
-            text='Ridership Composition', # Chart title text
+            text='Ridership Composition', # Chart title text                        
             x=0,                     # Align to the left
             xanchor='left',          # Anchor the title to the left
             font=dict(size=16)       # Optional: Adjust font size or style
@@ -1440,7 +1430,7 @@ def create_ridership_pie_chart(mta_data: pd.DataFrame) -> go.Figure:
                 },
                 'align': 'center'
             }
-        ],
+        ],        
         template='plotly_white',
     )
 
@@ -1457,7 +1447,7 @@ def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list
 
     Returns:
         fig: Plotly Figure object with scatter plots and trendlines for the selected services.
-    '''
+    '''   
     # Create a figure
     fig = go.Figure()
 
@@ -1511,7 +1501,14 @@ def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list
                 line=dict(
                     dash='dash',
                     color=service_colours[service]['tinted_colour']),
-                showlegend=True
+                showlegend=True,
+                customdata=service_data[[service]].assign(Service=service).to_numpy(),
+                hovertemplate=(
+                    # Display service name within the tooltip
+                    '<b>Service:</b> %{customdata[1]}<br>'
+                    '<b>Date:</b> %{x|%d %B %Y}<br>'
+                    '<b>Ridership:</b> %{y:,.0f}<extra></extra>'
+                )
             )
         )
 
@@ -1520,9 +1517,9 @@ def create_ridership_scatterplot(mta_data: pd.DataFrame, selected_services: list
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for plot area
         # Transparent background for whole figure
         paper_bgcolor='rgba(0,0,0,0)',
-        title='Ridership Recovery Trajectories for Selected Services',
+        title='Recovery Trajectories for Selected Services',
         xaxis_title=None,
-        yaxis_title=None,
+        yaxis_title='Ridership',
         template='plotly_white',
         margin=dict(
             r=150,  # Increase the right margin to accommodate the legend
@@ -1569,7 +1566,7 @@ def create_before_after_chart(mta_data: pd.DataFrame, services: list) -> go.Figu
     mta_data['Date'] = pd.to_datetime(mta_data['Date'], format='%m/%d/%Y')
 
     # Filter for pre-pandemic and post-pandemic date ranges
-    pre_pandemic_data = mta_data[mta_data['Date'] < '2020-03-11']
+    pre_pandemic_data = mta_data[mta_data['Date'] < '2020-03-11']    
     post_pandemic_data = mta_data[
         (mta_data['Date'].dt.year == 2024) &
         (mta_data['Date'].dt.month == 10) &
@@ -1746,7 +1743,8 @@ def create_daily_variability_boxplot(mta_data: pd.DataFrame, services: list, sta
         plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for plot area
         # Transparent background for whole figure
         paper_bgcolor='rgba(0,0,0,0)',
-        title=f'Daily Ridership Variability by Service ({start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")})',
+        title=f'Daily Ridership Variability by Service ({start_date.strftime(
+            '%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})',
         yaxis_title='Ridership',
         xaxis_title=None,
         template='plotly_white',

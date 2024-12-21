@@ -1,27 +1,24 @@
 import pandas as pd
-from dash import Dash, dcc, html
+import numpy as np
+from dash import Dash, dcc, html, dash_table
 import dash_bootstrap_components as dbc
 from dash.dependencies import Output, Input
+from dash.exceptions import PreventUpdate
 from dash_bootstrap_templates import load_figure_template
-import logging
-
-logging.basicConfig(
-    filename='debug.log',
-    level=logging.WARNING,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filemode='w')
-
-# Create a separate logger for your application
-logger = logging.getLogger('my_app_logger')
-logger.setLevel(logging.DEBUG)
-
-logger.debug('Application started')
+import dash_dangerously_set_inner_html
+import plotly.express as px
+import plotly.graph_objects as go
+from dash_extensions.enrich import Trigger
 
 from config import (
     services,
+    service_colours,
+    dark_blue,
+    dark_orange
 )
 
 from visual_functions import (
+    create_title,
     create_key_insights,
     create_kpi_cards,
     create_ridership_cards,
@@ -41,13 +38,16 @@ from visual_functions import (
 )
 
 from support_functions import (
+    calculate_total_recovery,
     create_thousand_dataframe,
     resample_data,
+    find_free_port,
     create_metrics,
+    prepare_comparison_table,
     create_kpis,
 )
 import json
-#from io import StringIO # This is to solve the problem of future pandas versions removing the ability to directly pass a JSON string to read_json
+from io import StringIO # This is to solve the problem of future pandas versions removing the ability to directly pass a JSON string to read_json
 
 mta_data = pd.read_csv('./data/MTA_Daily_Ridership.csv',parse_dates=['Date'])
 mta_data = mta_data.rename(columns={
@@ -77,6 +77,7 @@ app = Dash(
 load_figure_template('COSMO')
 # comparison_table = create_comparison_table(mta_data)
 kpis = create_kpis(mta_data)
+
 app.layout = dbc.Container(
     [
         html.Link(
@@ -89,30 +90,11 @@ app.layout = dbc.Container(
         dcc.Store(id='granular_data_json_store'),
         dcc.Store(id='mta_data_json_store'),
         dcc.Store(id='granularity_store'),
-        dcc.Store(id='metrics_store', data=json.dumps({"placeholder": "no_data"})),
-        dcc.Store(id='kpi_store', data=json.dumps({
-            "total_ridership": "N/A",
-            "highest_ridership_day": "N/A",
-            "total_recovery": "N/A",
-            "top_service": "N/A",
-            "recovery_percentage": 0,
-            "yoy_growth": 0,
-            "avg_lockdown_ridership": "N/A",
-            "avg_post_lockdown_ridership": "N/A"
-        })),
+        dcc.Store(id='metrics_store'),
+        dcc.Store(id='kpi_store'),
 
         # Title row
-        dbc.Row(
-            dbc.Col(
-                [
-                    html.H2(
-                        html.P("Tracking MTA Recovery: Ridership Trends and Insights"),
-                        id='report_title',
-                        className='bg-primary text-white p-2 mb-2 text-center'
-                    ),
-                ],
-            ),
-        ),
+        dbc.Row(create_title()),
 
         # Dropdowns row
         dbc.Row([
@@ -267,6 +249,7 @@ app.layout = dbc.Container(
                                 'width': '100%',
                                 'backgroundColor': 'transparent'}
                         ),
+
                         dbc.Row([
                             dbc.Col(
                                 dcc.Graph(
@@ -283,7 +266,7 @@ app.layout = dbc.Container(
                         ),
 
 
-                    ],
+                    ]
                 ),
                 # Ridership Comparisons Tab
                 dcc.Tab(
@@ -516,13 +499,8 @@ app.layout = dbc.Container(
             style={'margin-bottom': '0.8em'},
         ),
     ],
-    style={
-        "height": "100vh",
-        "width": "100vw",
-        "margin": "0px", # Possibly Could Be Removed as values other than 0 don't seem to have an effect Zero puts it right to the edge of the screen
-        "padding": "10px 0px 0px 20px" # The correct order for padding and margins is Top, Right, Bottom, Left
-    }
 )
+
 
 @app.callback(
     Output('ridership_card_row', 'children'),
@@ -535,29 +513,51 @@ app.layout = dbc.Container(
     ],
     prevent_initial_call='initial_duplicate',
 )
-
 def update_ridership_cards(selected_services, granular_data_json, granularity, metrics_json, tab):
+    if tab == 'Overview_and_key_metrics':
+        if granular_data_json is None:
+            return []
+        granular_data = pd.read_json(granular_data_json, orient='split')
+        if not selected_services:
+            selected_services = services
+        return create_ridership_cards(granular_data, selected_services, granularity, metrics)
+    else:
+        # Return the current state of the ridership cards
+        raise PreventUpdate
+
+
+@app.callback(
+    Output('kpi_card_row', 'children'),  # Update the row with new cards
+    Input('kpi_store', 'data'),
+)
+def update_kpi_cards(kpis_json):
+    kpis = json.loads(kpis_json)
+    return create_kpi_cards(kpis)
+
+
+@app.callback(
+    Output('ridership_card_row', 'children', allow_duplicate=True),
+    [
+        Input('selected_services_store', 'data'),
+        Input('granular_data_json_store', 'data'),
+        Input('granularity_store', 'data'),
+        Input('metrics_store', 'data'),
+    ],
+    prevent_initial_call='initial_duplicate',
+)
+def update_ridership_cards(selected_services, granular_data_json, granularity, metrics_json):
+    metrics = json.loads(metrics_json)
+    if granular_data_json is None:
+        return []
+    granular_data = pd.read_json(StringIO(granular_data_json), orient='split')
     if not selected_services:
         selected_services = services
-    mta_thousands = create_thousand_dataframe(mta_data)  # Ensure this function handles empty data gracefully
-    if mta_thousands is None:
-        logger.error("mta_thousands is None after create_thousand_dataframe(). Exiting function.")
-        return []
-    mta_thousands.set_index('Date', inplace=True)
-    granular_data = resample_data(mta_thousands, granularity)  # Ensure this function handles granularity properly
-    if granular_data is None:
-        logger.error("granular_data is None after resample_data(). Exiting function.")
-        return []
-    metrics = create_metrics(granular_data, selected_services)
-    if metrics is None:
-        logger.error("metrics is None after create_metrics(). Exiting function.")
-        return []
-    # Return ridership cards using the new data
     return create_ridership_cards(granular_data, selected_services, granularity, metrics)
 
 
 @app.callback(
     [
+        Output('report_title', 'children'),
         Output('service_line_chart', 'figure'),
         Output('selected_services_store', 'data'),
         Output('granular_data_json_store', 'data'),
@@ -583,6 +583,7 @@ def update_ridership_cards(selected_services, granular_data_json, granularity, m
     prevent_initial_call='initial_duplicate',
 )
 def display_information(granularity_dropdown_value, service_dropdown_value, selected_services):
+    title = 'MTA Ridership Dashboard'
     selected_services = (
         services
         if service_dropdown_value == 'all_services' or not service_dropdown_value
@@ -617,6 +618,7 @@ def display_information(granularity_dropdown_value, service_dropdown_value, sele
         mta_data, services, start_date, end_date)
     comparison_table = create_comparison_table(mta_data)
     return (
+        title,
         service_line_chart,
         selected_services,
         granular_data_json,

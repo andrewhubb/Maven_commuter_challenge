@@ -1,17 +1,17 @@
 import pandas as pd
-#import matplotlib as plt  # For testing forecasting - to be removed
-#import plotly.express as px
-#import plotly.graph_objects as go
-#import socket  # For finding next free port
+import numpy as np
+import matplotlib as plt  # For testing forecasting - to be removed
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+import socket  # For finding next free port
 from config import (
     services,
+    dark_blue,
+    dark_orange
 )
 from typing import Tuple
 
-import logging
-
-logging.basicConfig(filename='debug.log', level=logging.DEBUG,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def calculate_baseline_ridership(mta_data: pd.DataFrame, ridership_cols: list, baseline_period: pd.Series) -> float:
     """
@@ -64,10 +64,10 @@ def calculate_total_recovery(mta_data: pd.DataFrame, ridership_cols) -> float:
     """
     # Define baseline period: dates < 11/03/2020
     baseline_period = (mta_data['Date'] < '2020-03-11')
-
+    
     current_period = (mta_data['Date'].dt.year == 2024) & (
         mta_data['Date'].dt.month == 10) & (mta_data['Date'].dt.day < 11)
-
+        
     baseline_ridership = calculate_baseline_ridership(
         mta_data, ridership_cols, baseline_period)
     current_ridership = calculate_current_ridership(
@@ -86,8 +86,8 @@ def calculate_top_service_recovery(mta_data: pd.DataFrame, baseline_period: pd.S
 
     Args:
         mta_data (pd.DataFrame)    : DataFrame containing ridership data with service columns.
-        baseline_period (pd.Series): baseline period
-        current_period (pd.Series) : current_perid
+        baseline_period (pd.Series): baseline period        
+        current_period (pd.Series) : current_perid        
 
     Returns:
         Tuple[str, float]  The top-performing service based on recovery percentage and the top-performing service recovery percentage
@@ -167,11 +167,11 @@ def resample_data(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
     granularity_freq_mapping = {
         'Day': None,
         'Week': 'W',
-        'Month': 'M',
-        'Quarter': 'Q',
-        'Year': 'Y'
+        'Month': 'ME',
+        'Quarter': 'QE',
+        'Year': 'YE'
     }
-    granularity_freq = granularity_freq_mapping.get(granularity, 'M')
+    granularity_freq = granularity_freq_mapping.get(granularity, 'ME')
     # Convert DataFrame to string and write it to the file
     # Resample the data based on the granularity frequency
     # Resample and aggregate data using mean
@@ -187,8 +187,8 @@ def resample_data(df: pd.DataFrame, granularity: str) -> pd.DataFrame:
 
 
 def find_free_port(start_port=8700, max_port=8800) -> int:
-    """
-    Finds the next available port starting from `start_port` up to `max_port`.
+    """   
+    Finds the next available port starting from `start_port` up to `max_port`.    
 
     Args:
     start_port: the start of the port range. Default: 8700
@@ -248,7 +248,7 @@ def find_highest_ridership_day(df: pd.DataFrame) -> Tuple[str, str]:
     Calculates the day with the highest ridership and the number of riders
 
     Args:
-        df         : The dataframe to use for calculating
+        df         : The dataframe to use for calculating 
         granularity: The level of detail to use
 
     Returns:
@@ -268,7 +268,8 @@ def find_highest_ridership_day(df: pd.DataFrame) -> Tuple[str, str]:
     highest_ridership = post_pandemic_data.loc[post_pandemic_data['Total_Ridership'].idxmax(
     )]
     highest_ridership_day = highest_ridership['Date'].strftime('%d %b %Y')
-    total_ridership = f"{highest_ridership['Total_Ridership'] // 1_000_000:.1f}M"
+    total_ridership = f'{
+        highest_ridership['Total_Ridership'] // 1_000_000:.1f}M'
 
     return highest_ridership_day, total_ridership
 
@@ -319,12 +320,12 @@ def prepare_comparison_table(mta_data: pd.DataFrame) -> pd.DataFrame:
     mta_data['Date'] = pd.to_datetime(mta_data['Date'])
 
     # Define time ranges
-    pre_pandemic_range = mta_data[mta_data['Date'] < '2020-03-11']
+    pre_pandemic_range = mta_data[mta_data['Date'] < '2020-03-11']    
     first_post_pandemic_range = mta_data[(mta_data['Date'].dt.year == 2021) & (
         mta_data['Date'].dt.month == 10) & (mta_data['Date'].dt.day < 11)]
     current_year_range = mta_data[(mta_data['Date'].dt.year == 2024) & (
         mta_data['Date'].dt.month == 10) & (mta_data['Date'].dt.day < 11)]
-
+    
     # Identify ridership columns
     ridership_cols = [
         col for col in mta_data.columns if ': % of Pre-Pandemic' not in col and col != 'Date']
@@ -361,7 +362,8 @@ def prepare_comparison_table(mta_data: pd.DataFrame) -> pd.DataFrame:
         col for col in expected_columns if col not in comparison_table.columns]
 
     if missing_columns:
-        raise ValueError(f"The following expected columns are missing: {missing_columns}")
+        raise ValueError(f"The following expected columns are missing: {
+                         missing_columns}")
 
     # Format the table
     # Format numeric columns with commas and round percentages
@@ -410,8 +412,10 @@ def create_average_rideships(mta_data: pd.DataFrame) -> Tuple[str, str]:
         col for col in mta_data.columns if ': % of Pre-Pandemic' not in col and col != 'Date']
 
     # Calculate averages
-    average_ridership_lockdown = f"{lockdown_data[ridership_cols].sum(axis=1).mean():,.0f}"
-    average_ridership_post_lockdown = f"{post_lockdown_data[ridership_cols].sum(axis=1).mean():,.0f}"
+    average_ridership_lockdown = f'{
+        lockdown_data[ridership_cols].sum(axis=1).mean():,.0f}'
+    average_ridership_post_lockdown = f'{
+        post_lockdown_data[ridership_cols].sum(axis=1).mean():,.0f}'
 
     return average_ridership_lockdown, average_ridership_post_lockdown
 
@@ -420,10 +424,10 @@ def create_kpis(mta_data: pd.DataFrame) -> dict:
     """
     Creates the dictionary of KPIs for storing for later use.
 
-    Args:
+    Args: 
         mta_data: The complete MTA DataFrame with recovery percentage columns and a time column.
 
-    Returns:
+    Returns: 
         Figure: Plotly Figure object with the dual axis chart.
     """
     ridership_cols = [
@@ -432,11 +436,12 @@ def create_kpis(mta_data: pd.DataFrame) -> dict:
     # Metrics Calculations
     highest_ridership_day, total_ridership = find_highest_ridership_day(
         mta_data)
-    total_recovery = f"{calculate_total_recovery(mta_data, ridership_cols):.1f}%"
+    total_recovery = f'{calculate_total_recovery(
+        mta_data, ridership_cols):.1f}%'
 
-    baseline_period = (mta_data['Date'] < '2020-03-11')
+    baseline_period = (mta_data['Date'] < '2020-03-11')    
     current_period = (mta_data['Date'].dt.year == 2024) & (
-        mta_data['Date'].dt.month == 10) & (mta_data['Date'].dt.day < 11)
+        mta_data['Date'].dt.month == 10) & (mta_data['Date'].dt.day < 11)    
     top_service, recovery_percentage = calculate_top_service_recovery(
         mta_data, baseline_period, current_period)
 
